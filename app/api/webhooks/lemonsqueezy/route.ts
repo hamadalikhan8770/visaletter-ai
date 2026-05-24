@@ -6,10 +6,18 @@ import { getPlanFromVariantId } from '@/lib/lemonsqueezy'
 // Use Node.js runtime for crypto module
 export const runtime = 'nodejs'
 
-const adminSupabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _adminSupabase: any = null
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getAdminSupabase(): any {
+  if (!_adminSupabase) {
+    _adminSupabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _adminSupabase
+}
 
 // ────────────────────────────────────────────────────────────
 // Webhook signature verification
@@ -40,7 +48,7 @@ function verifySignature(rawBody: string, signature: string): boolean {
 async function findUserBySubscriptionId(
   lsSubscriptionId: string
 ): Promise<string | null> {
-  const { data } = await adminSupabase
+  const { data } = await getAdminSupabase()
     .from('subscriptions')
     .select('user_id')
     .eq('lemonsqueezy_subscription_id', lsSubscriptionId)
@@ -51,7 +59,7 @@ async function findUserBySubscriptionId(
 async function findUserByCustomerId(
   lsCustomerId: string
 ): Promise<string | null> {
-  const { data } = await adminSupabase
+  const { data } = await getAdminSupabase()
     .from('subscriptions')
     .select('user_id')
     .eq('lemonsqueezy_customer_id', lsCustomerId)
@@ -159,7 +167,7 @@ export async function POST(request: NextRequest) {
           ? new Date(attrs.renews_at)
           : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
 
-        const { error: updateError } = await adminSupabase
+        const { error: updateError } = await getAdminSupabase()
           .from('subscriptions')
           .update({
             plan,
@@ -181,7 +189,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Record payment
-        await adminSupabase.from('payments').insert({
+        await getAdminSupabase().from('payments').insert({
           user_id: userId,
           lemonsqueezy_order_id: String(attrs.order_id),
           status: 'succeeded',
@@ -228,7 +236,7 @@ export async function POST(request: NextRequest) {
           status = attrs.status
         }
 
-        await adminSupabase
+        await getAdminSupabase()
           .from('subscriptions')
           .update({
             status,
@@ -262,7 +270,7 @@ export async function POST(request: NextRequest) {
           ? new Date(attrs.ends_at).toISOString()
           : new Date().toISOString()
 
-        await adminSupabase
+        await getAdminSupabase()
           .from('subscriptions')
           .update({
             status: 'cancelled',
@@ -291,7 +299,7 @@ export async function POST(request: NextRequest) {
         }
 
         const now = new Date()
-        await adminSupabase
+        await getAdminSupabase()
           .from('subscriptions')
           .update({
             plan: 'free',
@@ -324,7 +332,7 @@ export async function POST(request: NextRequest) {
           break
         }
 
-        await adminSupabase
+        await getAdminSupabase()
           .from('subscriptions')
           .update({
             status: 'expired',
@@ -348,7 +356,7 @@ export async function POST(request: NextRequest) {
 
         if (!userId) break
 
-        await adminSupabase
+        await getAdminSupabase()
           .from('subscriptions')
           .update({
             status: 'active',
