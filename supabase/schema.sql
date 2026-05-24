@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS generations (
   full_name TEXT,
   current_country TEXT,
   target_country TEXT,
-  current_role TEXT,
+  "current_role" TEXT,
   years_experience TEXT,
   skills TEXT,
   education TEXT,
