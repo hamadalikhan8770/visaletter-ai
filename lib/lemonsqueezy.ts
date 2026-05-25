@@ -11,7 +11,7 @@ export function getLSHeaders(): Record<string, string> {
     throw new Error('LEMONSQUEEZY_API_KEY environment variable is not set')
   }
   return {
-    Authorization: `Bearer ${process.env.LEMONSQUEEZY_API_KEY}`,
+    Authorization: `Bearer ${(process.env.LEMONSQUEEZY_API_KEY ?? '').trim()}`,
     'Content-Type': 'application/vnd.api+json',
     Accept: 'application/vnd.api+json',
   }
@@ -21,8 +21,8 @@ export function getLSHeaders(): Record<string, string> {
 export function getVariantId(plan: 'basic' | 'pro'): string {
   const variantId =
     plan === 'basic'
-      ? process.env.LEMONSQUEEZY_BASIC_VARIANT_ID
-      : process.env.LEMONSQUEEZY_PRO_VARIANT_ID
+      ? (process.env.LEMONSQUEEZY_BASIC_VARIANT_ID ?? '').trim()
+      : (process.env.LEMONSQUEEZY_PRO_VARIANT_ID ?? '').trim()
 
   if (!variantId) {
     throw new Error(
@@ -38,8 +38,8 @@ export function getVariantId(plan: 'basic' | 'pro'): string {
  */
 export function getPlanFromVariantId(variantId: string | number): 'basic' | 'pro' | null {
   const id = String(variantId)
-  if (id === process.env.LEMONSQUEEZY_BASIC_VARIANT_ID) return 'basic'
-  if (id === process.env.LEMONSQUEEZY_PRO_VARIANT_ID) return 'pro'
+  if (id === (process.env.LEMONSQUEEZY_BASIC_VARIANT_ID ?? '').trim()) return 'basic'
+  if (id === (process.env.LEMONSQUEEZY_PRO_VARIANT_ID ?? '').trim()) return 'pro'
   return null
 }
 
@@ -58,7 +58,7 @@ export async function createCheckoutSession({
   plan: 'basic' | 'pro'
   redirectUrl: string
 }): Promise<string> {
-  const storeId = process.env.LEMONSQUEEZY_STORE_ID
+  const storeId = (process.env.LEMONSQUEEZY_STORE_ID ?? '').trim()
   if (!storeId) throw new Error('LEMONSQUEEZY_STORE_ID environment variable is not set')
 
   const variantId = getVariantId(plan)

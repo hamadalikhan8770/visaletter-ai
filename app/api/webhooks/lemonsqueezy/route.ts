@@ -12,8 +12,8 @@ let _adminSupabase: any = null
 function getAdminSupabase(): any {
   if (!_adminSupabase) {
     _adminSupabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim(),
+      (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim()
     )
   }
   return _adminSupabase
@@ -26,7 +26,7 @@ function getAdminSupabase(): any {
 // ────────────────────────────────────────────────────────────
 function verifySignature(rawBody: string, signature: string): boolean {
   try {
-    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET
+    const secret = (process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? '').trim()
     if (!secret) {
       console.error('LEMONSQUEEZY_WEBHOOK_SECRET is not set')
       return false
