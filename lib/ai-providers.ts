@@ -2,18 +2,26 @@
  * Multi-provider AI abstraction with automatic fallback.
  *
  * Routing order (cheapest-first):
- *   1. OpenRouter free models  — 3 models tried in sequence
- *   2. Gemini 2.5 Flash-Lite   — cheap paid fallback (~$0.00003/1k tokens)
- *   3. OpenAI gpt-4o-mini      — final paid fallback (~$0.00015/1k tokens)
+ *   1. OpenRouter free slots — each model has its OWN dedicated API key
+ *        Slot 1: MiniMax M2.5          (OPENROUTER_API_KEY_1)
+ *        Slot 2: DeepSeek V4 Flash     (OPENROUTER_API_KEY_2)
+ *        Slot 3: Arcee Trinity Large   (OPENROUTER_API_KEY_3)
+ *        Slot 4: Llama 3.3 70B        (OPENROUTER_API_KEY — shared fallback key)
+ *        Slot 5: Gemma 4 31B          (OPENROUTER_API_KEY — shared fallback key)
+ *   2. Gemini 1.5 Flash   — cheap paid fallback (GEMINI_API_KEY)
+ *   3. OpenAI gpt-4o-mini — final paid fallback  (OPENAI_API_KEY)
  *
- * A provider is skipped if its API key is not configured.
- * 429 rate-limits and empty responses trigger immediate fallback to the next provider.
+ * A slot/provider is skipped if its API key env var is not set.
+ * 429 rate-limits and empty responses trigger immediate fallback to the next slot.
  * All providers have a per-request timeout (PROVIDER_TIMEOUT_MS).
  *
  * Required env vars:
- *   OPENROUTER_API_KEY  — free at openrouter.ai
- *   GEMINI_API_KEY      — free tier at aistudio.google.com (paid beyond quota)
- *   OPENAI_API_KEY      — optional, only used when both above fail
+ *   OPENROUTER_API_KEY_1  — MiniMax M2.5 dedicated key
+ *   OPENROUTER_API_KEY_2  — DeepSeek V4 Flash dedicated key
+ *   OPENROUTER_API_KEY_3  — Arcee Trinity dedicated key
+ *   OPENROUTER_API_KEY    — shared fallback key (Llama 3.3, Gemma 4)
+ *   GEMINI_API_KEY        — Google AI Studio key
+ *   OPENAI_API_KEY        — optional final fallback
  *
  * Cost control:
  *   MAX_DAILY_GENERATIONS — exported constant; use it in a DB daily-count check
@@ -37,24 +45,54 @@ export interface AIResult {
   provider: string
 }
 
+interface OpenRouterSlot {
+  /** OpenRouter model ID */
+  model: string
+  /** Name of the env var that holds the API key for this slot */
+  apiKeyEnv: string
+  /** Human-readable label for logs */
+  label: string
+}
+
 // ─── Config ────────────────────────────────────────────────────────────────────
 
 /** Per-provider request timeout in milliseconds. */
 const PROVIDER_TIMEOUT_MS = 30_000
 
 /**
- * OpenRouter free models tried in priority order.
- * Reduced to 3 to keep total fallback time under ~90 s if all are rate-limited.
- * Update model IDs at https://openrouter.ai/models?q=free
+ * OpenRouter slots — each slot has its own dedicated API key so rate limits
+ * are fully independent. Slots 4-5 share OPENROUTER_API_KEY as a fallback pool.
  */
-const OPENROUTER_FREE_MODELS = [
-  'meta-llama/llama-3.3-70b-instruct:free',  // Llama 3.3 70B — best quality
-  'deepseek/deepseek-v4-flash:free',          // DeepSeek V4 Flash — fast
-  'google/gemma-4-31b-it:free',              // Google Gemma 4 31B — reliable
+const OPENROUTER_SLOTS: OpenRouterSlot[] = [
+  {
+    model: 'minimax/minimax-m2.5:free',
+    apiKeyEnv: 'OPENROUTER_API_KEY_1',
+    label: 'MiniMax M2.5',
+  },
+  {
+    model: 'deepseek/deepseek-v4-flash:free',
+    apiKeyEnv: 'OPENROUTER_API_KEY_2',
+    label: 'DeepSeek V4 Flash',
+  },
+  {
+    model: 'arcee-ai/arcee-trinity-large-thinking:free',
+    apiKeyEnv: 'OPENROUTER_API_KEY_3',
+    label: 'Arcee Trinity',
+  },
+  {
+    model: 'meta-llama/llama-3.3-70b-instruct:free',
+    apiKeyEnv: 'OPENROUTER_API_KEY',
+    label: 'Llama 3.3 70B',
+  },
+  {
+    model: 'google/gemma-4-31b-it:free',
+    apiKeyEnv: 'OPENROUTER_API_KEY',
+    label: 'Gemma 4 31B',
+  },
 ]
 
-/** Gemini 2.5 Flash-Lite model ID. Update if Google releases a newer version. */
-const GEMINI_MODEL = 'gemini-2.5-flash-lite'
+/** Gemini model ID. */
+const GEMINI_MODEL = 'gemini-1.5-flash'
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1/chat/completions'
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
@@ -88,18 +126,29 @@ function isRateLimit(status: number, bodyError?: { code?: number; message?: stri
   return msg.includes('rate limit') || msg.includes('rate-limit') || msg.includes('too many requests')
 }
 
-// ─── Provider: OpenRouter (free) ───────────────────────────────────────────────
+// ─── Provider: OpenRouter (slot-based, free) ───────────────────────────────────
 
+/**
+ * Tries each OpenRouter slot in order. Each slot uses its own dedicated API key
+ * so rate limits don't bleed across slots.
+ * Skips a slot if its API key env var is not set.
+ */
 async function generateWithOpenRouter(
   systemPrompt: string,
   userPrompt: string
 ): Promise<AIResult> {
-  const apiKey = (process.env.OPENROUTER_API_KEY ?? '').trim()
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY not set')
+  const slotErrors: string[] = []
 
-  const modelErrors: string[] = []
+  for (const slot of OPENROUTER_SLOTS) {
+    const apiKey = (process.env[slot.apiKeyEnv] ?? '').trim()
 
-  for (const model of OPENROUTER_FREE_MODELS) {
+    if (!apiKey) {
+      const msg = `${slot.label} → ${slot.apiKeyEnv} not set, skipping`
+      console.warn(`[OpenRouter] ${msg}`)
+      slotErrors.push(msg)
+      continue
+    }
+
     try {
       const res = await fetchWithTimeout(
         OPENROUTER_BASE,
@@ -112,7 +161,7 @@ async function generateWithOpenRouter(
             'X-Title': 'VisaLetter.ai',
           },
           body: JSON.stringify({
-            model,
+            model: slot.model,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
@@ -126,17 +175,17 @@ async function generateWithOpenRouter(
 
       // Fast-fail on rate limit without reading the body
       if (res.status === 429) {
-        const msg = `${model} → rate-limited (429)`
+        const msg = `${slot.label} → rate-limited (429)`
         console.warn(`[OpenRouter] ${msg}`)
-        modelErrors.push(msg)
+        slotErrors.push(msg)
         continue
       }
 
       if (!res.ok) {
         const errText = await res.text()
-        const msg = `${model} → HTTP ${res.status}: ${errText.slice(0, 200)}`
+        const msg = `${slot.label} → HTTP ${res.status}: ${errText.slice(0, 200)}`
         console.warn(`[OpenRouter] ${msg}`)
-        modelErrors.push(msg)
+        slotErrors.push(msg)
         continue
       }
 
@@ -146,43 +195,43 @@ async function generateWithOpenRouter(
       if (json.error) {
         const bodyErr = { code: json.error?.code, message: json.error?.message ?? JSON.stringify(json.error) }
         if (isRateLimit(res.status, bodyErr)) {
-          const msg = `${model} → rate-limited (body)`
+          const msg = `${slot.label} → rate-limited (body)`
           console.warn(`[OpenRouter] ${msg}`)
-          modelErrors.push(msg)
+          slotErrors.push(msg)
           continue
         }
-        const msg = `${model} → API error: ${bodyErr.message.slice(0, 150)}`
+        const msg = `${slot.label} → API error: ${bodyErr.message.slice(0, 150)}`
         console.warn(`[OpenRouter] ${msg}`)
-        modelErrors.push(msg)
+        slotErrors.push(msg)
         continue
       }
 
       const text: string = json.choices?.[0]?.message?.content?.trim() ?? ''
 
       if (!text) {
-        const msg = `${model} → empty response`
+        const msg = `${slot.label} → empty response`
         console.warn(`[OpenRouter] ${msg}`)
-        modelErrors.push(msg)
+        slotErrors.push(msg)
         continue
       }
 
       return {
         text,
         tokensUsed: json.usage?.total_tokens ?? 0,
-        provider: `openrouter/${model}`,
+        provider: `openrouter/${slot.model}`,
       }
     } catch (err) {
       const isTimeout = err instanceof Error && err.name === 'AbortError'
-      const msg = `${model} → ${isTimeout ? `timeout (${PROVIDER_TIMEOUT_MS / 1000}s)` : err instanceof Error ? err.message : String(err)}`
+      const msg = `${slot.label} → ${isTimeout ? `timeout (${PROVIDER_TIMEOUT_MS / 1000}s)` : err instanceof Error ? err.message : String(err)}`
       console.warn(`[OpenRouter] ${msg}`)
-      modelErrors.push(msg)
+      slotErrors.push(msg)
     }
   }
 
-  throw new Error(`All OpenRouter models failed:\n${modelErrors.join('\n')}`)
+  throw new Error(`All OpenRouter slots failed:\n${slotErrors.join('\n')}`)
 }
 
-// ─── Provider: Gemini 2.5 Flash-Lite (cheap paid) ─────────────────────────────
+// ─── Provider: Gemini 1.5 Flash (cheap paid) ──────────────────────────────────
 
 async function generateWithGemini(
   systemPrompt: string,
@@ -317,7 +366,8 @@ async function generateWithOpenAI(
 /**
  * Generates text using configured AI providers with automatic fallback.
  *
- * Routing: OpenRouter free (3 models) → Gemini 2.5 Flash-Lite → OpenAI gpt-4o-mini
+ * Routing:
+ *   OpenRouter slots (5 models, each with own key) → Gemini 1.5 Flash → OpenAI gpt-4o-mini
  *
  * Throws a USER-FRIENDLY error string if all providers fail.
  * Raw provider errors are only logged server-side.
@@ -328,23 +378,29 @@ export async function generateWithFallback(
 ): Promise<AIResult> {
   const providerErrors: string[] = []
 
-  // ── 1. OpenRouter free models ────────────────────────────────────────────────
-  if (process.env.OPENROUTER_API_KEY) {
+  // ── 1. OpenRouter free slots ─────────────────────────────────────────────────
+  const hasAnyOpenRouterKey =
+    process.env.OPENROUTER_API_KEY_1 ||
+    process.env.OPENROUTER_API_KEY_2 ||
+    process.env.OPENROUTER_API_KEY_3 ||
+    process.env.OPENROUTER_API_KEY
+
+  if (hasAnyOpenRouterKey) {
     try {
       const result = await generateWithOpenRouter(systemPrompt, userPrompt)
       console.log(`[AI] ✓ ${result.provider} — ${result.tokensUsed} tokens`)
       return result
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      providerErrors.push(`OpenRouter: ${msg.split('\n')[0]}`) // first line only for log brevity
+      providerErrors.push(`OpenRouter: ${msg.split('\n')[0]}`)
       console.warn('[AI] OpenRouter exhausted → trying Gemini')
     }
   } else {
-    providerErrors.push('OpenRouter: OPENROUTER_API_KEY not configured')
-    console.warn('[AI] Skipping OpenRouter (no key) → trying Gemini')
+    providerErrors.push('OpenRouter: no keys configured')
+    console.warn('[AI] Skipping OpenRouter (no keys) → trying Gemini')
   }
 
-  // ── 2. Gemini 2.5 Flash-Lite ─────────────────────────────────────────────────
+  // ── 2. Gemini 1.5 Flash ──────────────────────────────────────────────────────
   if (process.env.GEMINI_API_KEY) {
     try {
       const result = await generateWithGemini(systemPrompt, userPrompt)
