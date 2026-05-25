@@ -2,20 +2,8 @@ import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import OpenAI from 'openai'
+import { generateWithFallback } from '@/lib/ai-providers'
 import { PLAN_LIMITS, type Plan } from '@/types'
-
-// Lazily initialised so the module loads during build without crashing
-let _openai: OpenAI | null = null
-function getOpenAI(): OpenAI {
-  if (!_openai) {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY environment variable is not set')
-    }
-    _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  }
-  return _openai
-}
 
 const SYSTEM_PROMPT = `You are a professional career consultant and cover letter specialist with 15 years of experience helping international applicants secure visa-sponsored employment in the UK, Canada, and Australia.
 
@@ -58,8 +46,8 @@ export async function POST(request: NextRequest) {
 
   // Authenticated Supabase client (respects RLS — for reading user data)
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim(),
+    (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '').trim(),
     {
       cookies: {
         getAll() { return cookieStore.getAll() },
@@ -76,8 +64,8 @@ export async function POST(request: NextRequest) {
 
   // Admin client — bypasses RLS for writes (subscription counter, saving generation)
   const adminSupabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim(),
+    (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim()
   )
 
   // Verify auth
@@ -145,34 +133,26 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // Generate with OpenAI
+  // Generate with multi-provider fallback (OpenRouter free → Gemini 2.5 Flash-Lite → OpenAI gpt-4o-mini)
   let outputText: string
   let tokensUsed = 0
 
   try {
-    const completion = await getOpenAI().chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: buildUserPrompt(body) },
-      ],
-      max_tokens: 700,
-      temperature: 0.72,
-    })
-
-    outputText = completion.choices[0]?.message?.content?.trim() ?? ''
-    tokensUsed = completion.usage?.total_tokens ?? 0
+    const result = await generateWithFallback(SYSTEM_PROMPT, buildUserPrompt(body))
+    outputText = result.text
+    tokensUsed = result.tokensUsed
 
     if (!outputText) {
-      return NextResponse.json({ error: 'AI returned empty output. Please try again.' }, { status: 500 })
+      return NextResponse.json(
+        { error: 'Our AI service is temporarily busy. Please try again in a moment.' },
+        { status: 500 }
+      )
     }
   } catch (err: unknown) {
-    console.error('OpenAI error:', err)
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json(
-      { error: `AI generation failed: ${message}. Please try again.` },
-      { status: 500 }
-    )
+    // generateWithFallback already logs full provider details server-side.
+    // Surface a clean, user-friendly message — never expose raw API errors.
+    const message = err instanceof Error ? err.message : 'Our AI service is temporarily busy. Please try again in a moment.'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 
   // Save generation
