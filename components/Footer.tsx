@@ -2,14 +2,14 @@ import Link from 'next/link'
 
 export default function Footer() {
   return (
-    <footer className="bg-slate-900 text-slate-400">
+    <footer className="bg-[#0A0A14] border-t border-white/10 text-slate-400">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 mb-8">
           <div>
             <div className="text-xl font-extrabold tracking-tight mb-3">
-              <span className="text-blue-400">Visa</span>
+              <span className="text-indigo-400">Visa</span>
               <span className="text-white">Letter</span>
-              <span className="text-blue-400">.ai</span>
+              <span className="text-indigo-400">.ai</span>
             </div>
             <p className="text-sm leading-relaxed">
               AI-powered cover letters for international applicants applying to visa-sponsored jobs.
