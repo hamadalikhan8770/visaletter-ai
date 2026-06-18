@@ -2,6 +2,8 @@
 
 VisaLetter.ai is a Next.js application for generating visa-aware cover letters for international job applicants. This checkout includes a marketing site, auth pages, protected dashboard and generation routes, API endpoints, Supabase wiring, and pricing flow scaffolding.
 
+This repository is a verified portfolio project with successful build, lint, runtime, and screenshot checks. Some product flows still require live Supabase, AI provider, and billing credentials for full end-to-end testing.
+
 ## Current status
 
 - Repository state: runnable web app
