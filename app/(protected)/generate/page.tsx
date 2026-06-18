@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
@@ -58,7 +58,7 @@ export default function GeneratePage() {
   const [copied, setCopied] = useState(false)
   const [subscription, setSubscription] = useState<Subscription | null>(null)
   const [loadingSubscription, setLoadingSubscription] = useState(true)
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   useEffect(() => {
     async function loadProfile() {
@@ -77,7 +77,7 @@ export default function GeneratePage() {
       setLoadingSubscription(false)
     }
     loadProfile()
-  }, [])
+  }, [supabase])
 
   function updateField(field: keyof GenerateFormData, value: string) {
     setForm((f) => ({ ...f, [field]: value }))

@@ -7,6 +7,8 @@ VisaLetter.ai is a Next.js application for generating visa-aware cover letters f
 - Repository state: runnable web app
 - Product focus: AI-assisted cover letter generation for internationally mobile applicants
 - Build status from this audit: Passed (`npm run build`)
+- Lint status from this audit: Passed (`npm run lint`)
+- Runtime status from this audit: Passed on `http://127.0.0.1:3011`
 - Screenshot status: Real screenshots added from the running app
 
 ## Verified features from code
@@ -54,9 +56,22 @@ Without a configured authenticated session, protected routes redirected to the r
 ```powershell
 npm install
 Copy-Item .env.example .env.local
+npm run lint
 npm run build
 npm run start -- --hostname 127.0.0.1 --port 3000
 ```
+
+Minimum live credentials for full end-to-end verification:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
+NEXT_PUBLIC_SITE_URL=http://127.0.0.1:3000
+OPENROUTER_API_KEY=YOUR_PROVIDER_KEY
+```
+
+Billing and webhook verification additionally require real Lemon Squeezy values.
 
 ## Testing
 

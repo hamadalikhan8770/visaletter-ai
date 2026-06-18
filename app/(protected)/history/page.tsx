@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
@@ -14,7 +14,7 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   useEffect(() => {
     async function loadHistory() {
@@ -35,7 +35,7 @@ export default function HistoryPage() {
       setLoading(false)
     }
     loadHistory()
-  }, [])
+  }, [supabase])
 
   async function handleCopy(gen: Generation) {
     await navigator.clipboard.writeText(gen.output_text)

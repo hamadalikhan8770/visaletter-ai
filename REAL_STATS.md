@@ -22,7 +22,8 @@
 ## Build and runtime status
 
 - `npm install`: Passed
+- `npm run lint`: Passed
 - `npm run build`: Passed
 - Local server start: Passed on `http://127.0.0.1:3001`
-- Protected route auth flow: Partially verified via redirect to login
+- Route checks: Passed for `/`, `/login`, `/signup`; protected route auth flow partially verified via redirect on `/dashboard` and `/generate`
 - Live AI generation with real provider keys: Not verified yet

@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import { getPlanFromVariantId } from '@/lib/lemonsqueezy'
 
 // Use Node.js runtime for crypto module
 export const runtime = 'nodejs'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _adminSupabase: any = null
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getAdminSupabase(): any {
+let _adminSupabase: SupabaseClient | null = null
+
+function getAdminSupabase(): SupabaseClient {
   if (!_adminSupabase) {
     _adminSupabase = createClient(
       (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim(),
